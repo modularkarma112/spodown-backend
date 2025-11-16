@@ -62,11 +62,11 @@ def download_audio(video_id, title, artist, output_dir):
     
     # Configuración optimizada para velocidad y tamaño (max 10MB)
     base_opts = {
-        'format': 'bestaudio[filesize<10M]/best[filesize<10M]/bestaudio/best',
+        'format': 'worstaudio[filesize<10M]/worst[filesize<10M]/worstaudio/worst',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '128',  # 128kbps = ~1MB por minuto (canciones de 4-5 min = 4-5MB)
+            'preferredquality': '64',  # 64kbps = ~0.5MB por minuto (canciones de 4-5 min = 2-3MB)
         }],
         'outtmpl': output_path + '.%(ext)s',
         'quiet': True,
