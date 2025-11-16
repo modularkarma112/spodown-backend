@@ -18,7 +18,7 @@ COPY package*.json ./
 COPY requirements.txt ./
 
 # Instalar dependencias de Node.js
-RUN npm ci --only=production
+RUN npm install --production
 
 # Instalar yt-dlp globalmente
 RUN pip3 install --break-system-packages yt-dlp
