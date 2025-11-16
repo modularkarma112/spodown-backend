@@ -64,13 +64,6 @@ def download_audio(video_id, title, artist, output_dir):
         # Obtener archivo de cookies
         cookies_file = get_cookies_file()
         
-        # Buscar node en el sistema
-        node_path = 'node'  # Por defecto en PATH
-        if os.path.exists('/usr/local/bin/node'):
-            node_path = '/usr/local/bin/node'
-        elif os.path.exists('/usr/bin/node'):
-            node_path = '/usr/bin/node'
-        
         # Configuración base de yt-dlp
         base_opts = {
             'format': 'bestaudio/best',
@@ -101,8 +94,6 @@ def download_audio(video_id, title, artist, output_dir):
                     'player_skip': ['webpage'],
                 }
             },
-            # Habilitar Node.js runtime para JavaScript challenges
-            'js_runtimes': [f'node:{node_path}'],
             'socket_timeout': 30,
             'retries': 5,
             'fragment_retries': 5,
