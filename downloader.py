@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Descargador robusto usando yt-dlp con FFmpeg
-Usa el cliente Android de YouTube para evitar restricciones de bot
+Usa cookies de YouTube para evitar restricciones de bot
 """
 import sys
 import json
@@ -10,11 +10,46 @@ from pathlib import Path
 import yt_dlp
 from mutagen.id3 import ID3, TIT2, TPE1, TALB
 from mutagen.mp3 import MP3
+import base64
+import tempfile
+
+def get_cookies_file():
+    """
+    Busca archivo de cookies en múltiples ubicaciones:
+    1. Variable de entorno YOUTUBE_COOKIES_BASE64 (Base64)
+    2. Archivo /etc/youtube_cookies.txt (Render)
+    3. Archivo youtube_cookies.txt en directorio actual
+    """
+    # Intentar desde variable de entorno (Base64)
+    cookies_base64 = os.environ.get('YOUTUBE_COOKIES_BASE64')
+    if cookies_base64:
+        try:
+            cookies_content = base64.b64decode(cookies_base64).decode('utf-8')
+            cookies_file = os.path.join(tempfile.gettempdir(), 'yt_cookies.txt')
+            with open(cookies_file, 'w') as f:
+                f.write(cookies_content)
+            print(json.dumps({'type': 'info', 'message': '🍪 Usando cookies desde variable de entorno'}), flush=True)
+            return cookies_file
+        except Exception as e:
+            print(json.dumps({'type': 'warning', 'message': f'Error al decodificar cookies Base64: {e}'}), flush=True)
+    
+    # Intentar desde /etc (Render)
+    if os.path.exists('/etc/youtube_cookies.txt'):
+        print(json.dumps({'type': 'info', 'message': '🍪 Usando cookies desde /etc/youtube_cookies.txt'}), flush=True)
+        return '/etc/youtube_cookies.txt'
+    
+    # Intentar desde directorio actual
+    local_cookies = os.path.join(os.path.dirname(__file__), 'youtube_cookies.txt')
+    if os.path.exists(local_cookies):
+        print(json.dumps({'type': 'info', 'message': '🍪 Usando cookies desde archivo local'}), flush=True)
+        return local_cookies
+    
+    print(json.dumps({'type': 'warning', 'message': '⚠️ No se encontraron cookies, intentando sin autenticación'}), flush=True)
+    return None
 
 def download_audio(video_id, title, artist, output_dir):
     """
-    Descarga audio de YouTube usando yt-dlp con cliente Android
-    Evita restricciones de bot usando player_client=['android', 'web']
+    Descarga audio de YouTube usando yt-dlp con cookies
     """
     try:
         # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
@@ -25,6 +60,9 @@ def download_audio(video_id, title, artist, output_dir):
         
         file_name = f"{safe_artist} - {safe_title}"
         output_path = os.path.join(output_dir, file_name)
+        
+        # Obtener archivo de cookies
+        cookies_file = get_cookies_file()
         
         # Configuración base de yt-dlp
         base_opts = {
@@ -52,14 +90,18 @@ def download_audio(video_id, title, artist, output_dir):
             # Usar cliente Android para evitar restricciones de bot
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'web'],
-                    'player_skip': ['webpage', 'configs'],
+                    'player_client': ['android', 'ios', 'web'],
+                    'player_skip': ['webpage'],
                 }
             },
             'socket_timeout': 30,
             'retries': 5,
             'fragment_retries': 5,
         }
+        
+        # Agregar cookies si están disponibles
+        if cookies_file and os.path.exists(cookies_file):
+            base_opts['cookiefile'] = cookies_file
         
         # Descargar desde YouTube
         url = f'https://www.youtube.com/watch?v={video_id}'
