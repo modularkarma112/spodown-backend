@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Descargador robusto usando yt-dlp con FFmpeg
-Similar a convertidores de YouTube a MP3 de código abierto
+Usa el cliente Android de YouTube para evitar restricciones de bot
 """
 import sys
 import json
@@ -13,8 +13,8 @@ from mutagen.mp3 import MP3
 
 def download_audio(video_id, title, artist, output_dir):
     """
-    Descarga audio de YouTube o fuentes alternativas usando yt-dlp
-    Intenta: YouTube → SoundCloud → Bandcamp
+    Descarga audio de YouTube usando yt-dlp con cliente Android
+    Evita restricciones de bot usando player_client=['android', 'web']
     """
     try:
         # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
@@ -49,74 +49,64 @@ def download_audio(video_id, title, artist, output_dir):
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-us,en;q=0.5',
             },
+            # Usar cliente Android para evitar restricciones de bot
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web'],
+                    'player_skip': ['webpage', 'configs'],
+                }
+            },
             'socket_timeout': 30,
-            'retries': 3,
-            'fragment_retries': 3,
+            'retries': 5,
+            'fragment_retries': 5,
         }
         
-        # Intentar múltiples fuentes
-        sources = [
-            ('YouTube', f'https://www.youtube.com/watch?v={video_id}'),
-            ('SoundCloud', f'scsearch:"{artist} {title}"'),
-            ('Bandcamp', f'bcsearch:"{artist} {title}"'),
-        ]
+        # Descargar desde YouTube
+        url = f'https://www.youtube.com/watch?v={video_id}'
         
-        last_error = None
+        print(json.dumps({
+            'type': 'info',
+            'message': 'Descargando desde YouTube...'
+        }), flush=True)
         
-        for source_name, url in sources:
-            try:
+        with yt_dlp.YoutubeDL(base_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            
+            # Encontrar el archivo MP3 generado
+            mp3_file = output_path + '.mp3'
+            
+            if os.path.exists(mp3_file):
+                # Agregar metadatos ID3
+                try:
+                    audio = MP3(mp3_file, ID3=ID3)
+                    if audio.tags is None:
+                        audio.add_tags()
+                    
+                    audio.tags.add(TIT2(encoding=3, text=title))
+                    audio.tags.add(TPE1(encoding=3, text=artist))
+                    audio.tags.add(TALB(encoding=3, text='Spodown'))
+                    audio.save()
+                except Exception as meta_error:
+                    print(json.dumps({'type': 'warning', 'message': f'Metadatos: {meta_error}'}), flush=True)
+                
+                file_size = os.path.getsize(mp3_file)
+                size_mb = file_size / (1024 * 1024)
+                
                 print(json.dumps({
-                    'type': 'info',
-                    'message': f'Intentando descargar desde {source_name}...'
+                    'type': 'complete',
+                    'success': True,
+                    'source': 'YouTube',
+                    'fileName': os.path.basename(mp3_file),
+                    'filePath': mp3_file,
+                    'size': file_size,
+                    'sizeMB': round(size_mb, 2),
+                    'title': info.get('title', file_name),
+                    'duration': info.get('duration', 0),
                 }), flush=True)
                 
-                with yt_dlp.YoutubeDL(base_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    
-                    # Encontrar el archivo MP3 generado
-                    mp3_file = output_path + '.mp3'
-                    
-                    if os.path.exists(mp3_file):
-                        # Agregar metadatos ID3
-                        try:
-                            audio = MP3(mp3_file, ID3=ID3)
-                            if audio.tags is None:
-                                audio.add_tags()
-                            
-                            audio.tags.add(TIT2(encoding=3, text=title))
-                            audio.tags.add(TPE1(encoding=3, text=artist))
-                            audio.tags.add(TALB(encoding=3, text='Spodown'))
-                            audio.save()
-                        except Exception as meta_error:
-                            print(json.dumps({'type': 'warning', 'message': f'Metadatos: {meta_error}'}), flush=True)
-                        
-                        file_size = os.path.getsize(mp3_file)
-                        size_mb = file_size / (1024 * 1024)
-                        
-                        print(json.dumps({
-                            'type': 'complete',
-                            'success': True,
-                            'source': source_name,
-                            'fileName': os.path.basename(mp3_file),
-                            'filePath': mp3_file,
-                            'size': file_size,
-                            'sizeMB': round(size_mb, 2),
-                            'title': info.get('title', file_name),
-                            'duration': info.get('duration', 0),
-                        }), flush=True)
-                        
-                        return True
-                    
-            except Exception as e:
-                last_error = str(e)
-                print(json.dumps({
-                    'type': 'warning',
-                    'message': f'{source_name} falló: {str(e)[:100]}'
-                }), flush=True)
-                continue
-        
-        # Si todas las fuentes fallaron
-        raise Exception(f"Todas las fuentes fallaron. Último error: {last_error}")
+                return True
+            else:
+                raise Exception("Archivo MP3 no generado")
                 
     except Exception as e:
         print(json.dumps({
