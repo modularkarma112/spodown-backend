@@ -20,8 +20,8 @@ COPY requirements.txt ./
 # Instalar dependencias de Node.js
 RUN npm install --production
 
-# Instalar yt-dlp globalmente
-RUN pip3 install --break-system-packages yt-dlp
+# Instalar dependencias de Python desde requirements.txt
+RUN pip3 install --break-system-packages -r requirements.txt
 
 # Copiar el resto de los archivos
 COPY . .
