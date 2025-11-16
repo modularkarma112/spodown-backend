@@ -85,7 +85,16 @@ io.on('connection', (socket) => {
   });
 });
 
-// Endpoint de salud
+// Endpoint de salud (para Render)
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Servidor funcionando correctamente',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Endpoint de salud (legacy)
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',

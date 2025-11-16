@@ -27,8 +27,11 @@ COPY . .
 # Crear directorio de descargas
 RUN mkdir -p downloads
 
-# Exponer el puerto
-EXPOSE 3001
+# Exponer el puerto (Render usa PORT env variable)
+EXPOSE 10000
+
+# Variable de entorno para el puerto
+ENV PORT=10000
 
 # Comando para iniciar el servidor
 CMD ["node", "server.js"]
