@@ -49,125 +49,140 @@ def get_cookies_file():
 
 def download_audio(video_id, title, artist, output_dir):
     """
-    Descarga audio de YouTube usando yt-dlp con cookies y Node.js runtime
+    Descarga audio intentando múltiples fuentes:
+    1. YouTube (con video_id)
+    2. SoundCloud (búsqueda)
+    3. YouTube Music (búsqueda)
     """
-    try:
-        # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
-        safe_artist = "".join(c for c in artist if c.isalnum() or c in (' ', '-', '_')).strip()
-        safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-        safe_artist = safe_artist.replace('  ', ' ')
-        safe_title = safe_title.replace('  ', ' ')
-        
-        file_name = f"{safe_artist} - {safe_title}"
-        output_path = os.path.join(output_dir, file_name)
-        
-        # Obtener archivo de cookies
-        cookies_file = get_cookies_file()
-        
-        # Ruta del archivo de configuración
-        config_file = os.path.join(os.path.dirname(__file__), 'yt-dlp.conf')
-        
-        # Configuración base de yt-dlp
-        base_opts = {
-            # Intentar múltiples formatos, priorizando audio
-            'format': 'bestaudio/best',
-            # Fallback a formatos más compatibles si los mejores no están disponibles
-            'format_sort': ['acodec:aac', 'acodec:mp3', 'ext:m4a:m4a', 'ext:webm:webm'],
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': output_path + '.%(ext)s',
-            'quiet': False,
-            'no_warnings': False,
-            'extract_flat': False,
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'logtostderr': False,
-            'no_color': True,
-            'progress_hooks': [progress_hook],
-            # Headers para evitar bloqueos
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-us,en;q=0.5',
-            },
-            # Usar solo cliente web con cookies (android/ios no soportan cookies)
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['web', 'tv_embedded'],  # tv_embedded como fallback
-                    'player_skip': ['webpage'],
-                }
-            },
-            'socket_timeout': 30,
-            'retries': 5,
-            'fragment_retries': 5,
-        }
-        
-        # Agregar cookies si están disponibles
-        if cookies_file and os.path.exists(cookies_file):
-            base_opts['cookiefile'] = cookies_file
-        
-        # Agregar archivo de configuración si existe
-        if os.path.exists(config_file):
-            print(json.dumps({'type': 'info', 'message': f'📝 Usando configuración desde {config_file}'}), flush=True)
-            base_opts['config_location'] = config_file
-        
-        # Descargar desde YouTube
-        url = f'https://www.youtube.com/watch?v={video_id}'
-        
-        print(json.dumps({
-            'type': 'info',
-            'message': 'Descargando desde YouTube...'
-        }), flush=True)
-        
-        with yt_dlp.YoutubeDL(base_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+    # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
+    safe_artist = "".join(c for c in artist if c.isalnum() or c in (' ', '-', '_')).strip()
+    safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+    safe_artist = safe_artist.replace('  ', ' ')
+    safe_title = safe_title.replace('  ', ' ')
+    
+    file_name = f"{safe_artist} - {safe_title}"
+    output_path = os.path.join(output_dir, file_name)
+    
+    # Configuración base común
+    base_opts = {
+        'format': 'bestaudio/best',
+        'format_sort': ['acodec:aac', 'acodec:mp3', 'ext:m4a:m4a', 'ext:webm:webm'],
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'outtmpl': output_path + '.%(ext)s',
+        'quiet': False,
+        'no_warnings': False,
+        'extract_flat': False,
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
+        'logtostderr': False,
+        'no_color': True,
+        'progress_hooks': [progress_hook],
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+        },
+        'socket_timeout': 30,
+        'retries': 5,
+        'fragment_retries': 5,
+    }
+    
+    # Intentar múltiples fuentes
+    sources = [
+        {
+            'name': 'YouTube',
+            'url': f'https://www.youtube.com/watch?v={video_id}',
+            'opts': {
+                **base_opts,
+                'cookiefile': get_cookies_file(),
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['web', 'tv_embedded'],
+                        'player_skip': ['webpage'],
+                    }
+                },
+            }
+        },
+        {
+            'name': 'SoundCloud',
+            'url': f'scsearch5:"{artist} {title}"',
+            'opts': base_opts
+        },
+        {
+            'name': 'YouTube Music Search',
+            'url': f'ytsearch5:"{artist} {title}"',
+            'opts': {
+                **base_opts,
+                'default_search': 'ytsearch',
+            }
+        },
+    ]
+    
+    last_error = None
+    
+    for source in sources:
+        try:
+            print(json.dumps({
+                'type': 'info',
+                'message': f'🔄 Intentando descargar desde {source["name"]}...'
+            }), flush=True)
             
-            # Encontrar el archivo MP3 generado
-            mp3_file = output_path + '.mp3'
-            
-            if os.path.exists(mp3_file):
-                # Agregar metadatos ID3
-                try:
-                    audio = MP3(mp3_file, ID3=ID3)
-                    if audio.tags is None:
-                        audio.add_tags()
+            with yt_dlp.YoutubeDL(source['opts']) as ydl:
+                info = ydl.extract_info(source['url'], download=True)
+                
+                # Encontrar el archivo MP3 generado
+                mp3_file = output_path + '.mp3'
+                
+                if os.path.exists(mp3_file):
+                    # Agregar metadatos ID3
+                    try:
+                        audio = MP3(mp3_file, ID3=ID3)
+                        if audio.tags is None:
+                            audio.add_tags()
+                        
+                        audio.tags.add(TIT2(encoding=3, text=title))
+                        audio.tags.add(TPE1(encoding=3, text=artist))
+                        audio.tags.add(TALB(encoding=3, text='Spodown'))
+                        audio.save()
+                    except Exception as meta_error:
+                        print(json.dumps({'type': 'warning', 'message': f'Metadatos: {meta_error}'}), flush=True)
                     
-                    audio.tags.add(TIT2(encoding=3, text=title))
-                    audio.tags.add(TPE1(encoding=3, text=artist))
-                    audio.tags.add(TALB(encoding=3, text='Spodown'))
-                    audio.save()
-                except Exception as meta_error:
-                    print(json.dumps({'type': 'warning', 'message': f'Metadatos: {meta_error}'}), flush=True)
-                
-                file_size = os.path.getsize(mp3_file)
-                size_mb = file_size / (1024 * 1024)
-                
-                print(json.dumps({
-                    'type': 'complete',
-                    'success': True,
-                    'source': 'YouTube',
-                    'fileName': os.path.basename(mp3_file),
-                    'filePath': mp3_file,
-                    'size': file_size,
-                    'sizeMB': round(size_mb, 2),
-                    'title': info.get('title', file_name),
-                    'duration': info.get('duration', 0),
-                }), flush=True)
-                
-                return True
-            else:
-                raise Exception("Archivo MP3 no generado")
-                
-    except Exception as e:
-        print(json.dumps({
-            'type': 'error',
-            'success': False,
-            'error': str(e)
-        }), flush=True)
-        return False
+                    file_size = os.path.getsize(mp3_file)
+                    size_mb = file_size / (1024 * 1024)
+                    
+                    print(json.dumps({
+                        'type': 'complete',
+                        'success': True,
+                        'source': source['name'],
+                        'fileName': os.path.basename(mp3_file),
+                        'filePath': mp3_file,
+                        'size': file_size,
+                        'sizeMB': round(size_mb, 2),
+                        'title': info.get('title', file_name) if isinstance(info, dict) else file_name,
+                        'duration': info.get('duration', 0) if isinstance(info, dict) else 0,
+                    }), flush=True)
+                    
+                    return True
+                    
+        except Exception as e:
+            last_error = str(e)
+            print(json.dumps({
+                'type': 'warning',
+                'message': f'❌ {source["name"]} falló: {str(e)[:100]}'
+            }), flush=True)
+            continue
+    
+    # Si todas las fuentes fallaron
+    print(json.dumps({
+        'type': 'error',
+        'success': False,
+        'error': f'Todas las fuentes fallaron. Último error: {last_error}'
+    }), flush=True)
+    return False
 
 def progress_hook(d):
     """Hook para reportar progreso en tiempo real"""
