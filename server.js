@@ -9,6 +9,9 @@ const os = require('os');
 const NodeID3 = require('node-id3');
 const axios = require('axios');
 
+// Detectar comando de Python según el sistema operativo
+const PYTHON_CMD = os.platform() === 'win32' ? 'python' : 'python3';
+
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3001;
@@ -123,7 +126,7 @@ app.post('/api/search', async (req, res) => {
     console.log(`\n🔍 Búsqueda: ${query}`);
 
     // Usar Python con yt-dlp para búsqueda más confiable
-    const pythonSearch = spawn('python', [
+    const pythonSearch = spawn(PYTHON_CMD, [
       '-c',
       `
 import yt_dlp
@@ -250,10 +253,9 @@ app.post('/api/download', async (req, res) => {
     });
 
     // Ejecutar script Python de descarga
-    const pythonPath = 'python'; // o 'python3' en Linux/Mac
     const downloaderScript = path.join(__dirname, 'downloader.py');
     
-    const downloadProcess = spawn(pythonPath, [
+    const downloadProcess = spawn(PYTHON_CMD, [
       downloaderScript,
       videoId,
       title,
