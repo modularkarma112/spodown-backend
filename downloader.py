@@ -13,7 +13,8 @@ from mutagen.mp3 import MP3
 
 def download_audio(video_id, title, artist, output_dir):
     """
-    Descarga audio de YouTube usando yt-dlp con las mejores prácticas
+    Descarga audio de YouTube o fuentes alternativas usando yt-dlp
+    Intenta: YouTube → SoundCloud → Bandcamp
     """
     try:
         # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
@@ -25,12 +26,8 @@ def download_audio(video_id, title, artist, output_dir):
         file_name = f"{safe_artist} - {safe_title}"
         output_path = os.path.join(output_dir, file_name)
         
-        # Ruta a FFmpeg local
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        ffmpeg_location = os.path.join(script_dir, 'ffmpeg', 'bin')
-        
-        # Configuración óptima de yt-dlp (usado por convertidores populares)
-        ydl_opts = {
+        # Configuración base de yt-dlp
+        base_opts = {
             'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -46,71 +43,80 @@ def download_audio(video_id, title, artist, output_dir):
             'logtostderr': False,
             'no_color': True,
             'progress_hooks': [progress_hook],
-            'ffmpeg_location': ffmpeg_location,  # Usar FFmpeg local
             # Headers para evitar bloqueos
             'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-us,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
             },
-            # Opciones adicionales para evitar errores
             'socket_timeout': 30,
             'retries': 3,
             'fragment_retries': 3,
-            'extractor_retries': 3,
         }
         
-        url = f'https://www.youtube.com/watch?v={video_id}'
+        # Intentar múltiples fuentes
+        sources = [
+            ('YouTube', f'https://www.youtube.com/watch?v={video_id}'),
+            ('SoundCloud', f'scsearch:"{artist} {title}"'),
+            ('Bandcamp', f'bcsearch:"{artist} {title}"'),
+        ]
         
-        print(json.dumps({
-            'type': 'start',
-            'message': f'Iniciando descarga: {file_name}',
-            'url': url
-        }), flush=True)
+        last_error = None
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            
-            # Encontrar el archivo MP3 generado
-            mp3_file = output_path + '.mp3'
-            
-            if os.path.exists(mp3_file):
-                # Agregar metadatos ID3
-                try:
-                    audio = MP3(mp3_file, ID3=ID3)
-                    
-                    # Crear tags si no existen
-                    if audio.tags is None:
-                        audio.add_tags()
-                    
-                    # Escribir metadatos
-                    audio.tags.add(TIT2(encoding=3, text=title))  # Título
-                    audio.tags.add(TPE1(encoding=3, text=artist))  # Artista
-                    audio.tags.add(TALB(encoding=3, text='Spodown'))  # Álbum
-                    
-                    audio.save()
-                    print(json.dumps({'type': 'info', 'message': 'Metadatos ID3 agregados'}), flush=True)
-                except Exception as meta_error:
-                    print(json.dumps({'type': 'warning', 'message': f'No se pudieron escribir metadatos: {meta_error}'}), flush=True)
-                
-                file_size = os.path.getsize(mp3_file)
-                size_mb = file_size / (1024 * 1024)
-                
+        for source_name, url in sources:
+            try:
                 print(json.dumps({
-                    'type': 'complete',
-                    'success': True,
-                    'fileName': os.path.basename(mp3_file),
-                    'filePath': mp3_file,
-                    'size': file_size,
-                    'sizeMB': round(size_mb, 2),
-                    'title': info.get('title', file_name),
-                    'duration': info.get('duration', 0),
+                    'type': 'info',
+                    'message': f'Intentando descargar desde {source_name}...'
                 }), flush=True)
                 
-                return True
-            else:
-                raise Exception(f"Archivo MP3 no encontrado: {mp3_file}")
+                with yt_dlp.YoutubeDL(base_opts) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    
+                    # Encontrar el archivo MP3 generado
+                    mp3_file = output_path + '.mp3'
+                    
+                    if os.path.exists(mp3_file):
+                        # Agregar metadatos ID3
+                        try:
+                            audio = MP3(mp3_file, ID3=ID3)
+                            if audio.tags is None:
+                                audio.add_tags()
+                            
+                            audio.tags.add(TIT2(encoding=3, text=title))
+                            audio.tags.add(TPE1(encoding=3, text=artist))
+                            audio.tags.add(TALB(encoding=3, text='Spodown'))
+                            audio.save()
+                        except Exception as meta_error:
+                            print(json.dumps({'type': 'warning', 'message': f'Metadatos: {meta_error}'}), flush=True)
+                        
+                        file_size = os.path.getsize(mp3_file)
+                        size_mb = file_size / (1024 * 1024)
+                        
+                        print(json.dumps({
+                            'type': 'complete',
+                            'success': True,
+                            'source': source_name,
+                            'fileName': os.path.basename(mp3_file),
+                            'filePath': mp3_file,
+                            'size': file_size,
+                            'sizeMB': round(size_mb, 2),
+                            'title': info.get('title', file_name),
+                            'duration': info.get('duration', 0),
+                        }), flush=True)
+                        
+                        return True
+                    
+            except Exception as e:
+                last_error = str(e)
+                print(json.dumps({
+                    'type': 'warning',
+                    'message': f'{source_name} falló: {str(e)[:100]}'
+                }), flush=True)
+                continue
+        
+        # Si todas las fuentes fallaron
+        raise Exception(f"Todas las fuentes fallaron. Último error: {last_error}")
                 
     except Exception as e:
         print(json.dumps({
