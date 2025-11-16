@@ -69,7 +69,10 @@ def download_audio(video_id, title, artist, output_dir):
         
         # Configuración base de yt-dlp
         base_opts = {
+            # Intentar múltiples formatos, priorizando audio
             'format': 'bestaudio/best',
+            # Fallback a formatos más compatibles si los mejores no están disponibles
+            'format_sort': ['acodec:aac', 'acodec:mp3', 'ext:m4a:m4a', 'ext:webm:webm'],
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -93,7 +96,7 @@ def download_audio(video_id, title, artist, output_dir):
             # Usar solo cliente web con cookies (android/ios no soportan cookies)
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['web'],
+                    'player_client': ['web', 'tv_embedded'],  # tv_embedded como fallback
                     'player_skip': ['webpage'],
                 }
             },
