@@ -49,10 +49,7 @@ def get_cookies_file():
 
 def download_audio(video_id, title, artist, output_dir):
     """
-    Descarga audio intentando múltiples fuentes:
-    1. YouTube (con video_id)
-    2. SoundCloud (búsqueda)
-    3. YouTube Music (búsqueda)
+    Descarga audio priorizando SoundCloud para mejor velocidad y calidad
     """
     # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
     safe_artist = "".join(c for c in artist if c.isalnum() or c in (' ', '-', '_')).strip()
@@ -63,36 +60,43 @@ def download_audio(video_id, title, artist, output_dir):
     file_name = f"{safe_artist} - {safe_title}"
     output_path = os.path.join(output_dir, file_name)
     
-    # Configuración base común
+    # Configuración optimizada para velocidad y calidad
     base_opts = {
         'format': 'bestaudio/best',
-        'format_sort': ['acodec:aac', 'acodec:mp3', 'ext:m4a:m4a', 'ext:webm:webm'],
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '192',
+            'preferredquality': '320',  # Máxima calidad
         }],
         'outtmpl': output_path + '.%(ext)s',
-        'quiet': False,
-        'no_warnings': False,
+        'quiet': True,  # Menos output para más velocidad
+        'no_warnings': True,
         'extract_flat': False,
         'nocheckcertificate': True,
-        'ignoreerrors': False,
+        'ignoreerrors': True,
         'logtostderr': False,
         'no_color': True,
         'progress_hooks': [progress_hook],
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-us,en;q=0.5',
         },
-        'socket_timeout': 30,
-        'retries': 5,
-        'fragment_retries': 5,
+        'socket_timeout': 20,  # Timeout más corto
+        'retries': 3,
+        'fragment_retries': 3,
     }
     
-    # Intentar múltiples fuentes
+    # Priorizar SoundCloud, luego YouTube Music, luego YouTube directo
     sources = [
+        {
+            'name': 'SoundCloud',
+            'url': f'scsearch1:"{artist} {title}"',  # Tomar solo el primer resultado
+            'opts': base_opts
+        },
+        {
+            'name': 'YouTube Music',
+            'url': f'ytsearch1:"{artist} {title} audio"',
+            'opts': base_opts
+        },
         {
             'name': 'YouTube',
             'url': f'https://www.youtube.com/watch?v={video_id}',
@@ -101,23 +105,10 @@ def download_audio(video_id, title, artist, output_dir):
                 'cookiefile': get_cookies_file(),
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['web', 'tv_embedded'],
-                        'player_skip': ['webpage'],
+                        'player_client': ['tv_embedded', 'web'],
+                        'player_skip': ['webpage', 'configs'],
                     }
                 },
-            }
-        },
-        {
-            'name': 'SoundCloud',
-            'url': f'scsearch5:"{artist} {title}"',
-            'opts': base_opts
-        },
-        {
-            'name': 'YouTube Music Search',
-            'url': f'ytsearch5:"{artist} {title}"',
-            'opts': {
-                **base_opts,
-                'default_search': 'ytsearch',
             }
         },
     ]
@@ -128,7 +119,7 @@ def download_audio(video_id, title, artist, output_dir):
         try:
             print(json.dumps({
                 'type': 'info',
-                'message': f'🔄 Intentando descargar desde {source["name"]}...'
+                'message': f'🔄 Buscando en {source["name"]}...'
             }), flush=True)
             
             with yt_dlp.YoutubeDL(source['opts']) as ydl:
@@ -137,7 +128,7 @@ def download_audio(video_id, title, artist, output_dir):
                 # Encontrar el archivo MP3 generado
                 mp3_file = output_path + '.mp3'
                 
-                if os.path.exists(mp3_file):
+                if os.path.exists(mp3_file) and os.path.getsize(mp3_file) > 100000:  # Verificar que sea válido (>100KB)
                     # Agregar metadatos ID3
                     try:
                         audio = MP3(mp3_file, ID3=ID3)
@@ -171,8 +162,8 @@ def download_audio(video_id, title, artist, output_dir):
         except Exception as e:
             last_error = str(e)
             print(json.dumps({
-                'type': 'warning',
-                'message': f'❌ {source["name"]} falló: {str(e)[:100]}'
+                'type': 'info',
+                'message': f'⏩ Intentando siguiente fuente...'
             }), flush=True)
             continue
     
@@ -180,7 +171,7 @@ def download_audio(video_id, title, artist, output_dir):
     print(json.dumps({
         'type': 'error',
         'success': False,
-        'error': f'Todas las fuentes fallaron. Último error: {last_error}'
+        'error': f'No se pudo descargar desde ninguna fuente. Último error: {last_error}'
     }), flush=True)
     return False
 
