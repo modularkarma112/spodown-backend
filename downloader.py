@@ -64,6 +64,9 @@ def download_audio(video_id, title, artist, output_dir):
         # Obtener archivo de cookies
         cookies_file = get_cookies_file()
         
+        # Ruta del archivo de configuración
+        config_file = os.path.join(os.path.dirname(__file__), 'yt-dlp.conf')
+        
         # Configuración base de yt-dlp
         base_opts = {
             'format': 'bestaudio/best',
@@ -102,6 +105,11 @@ def download_audio(video_id, title, artist, output_dir):
         # Agregar cookies si están disponibles
         if cookies_file and os.path.exists(cookies_file):
             base_opts['cookiefile'] = cookies_file
+        
+        # Agregar archivo de configuración si existe
+        if os.path.exists(config_file):
+            print(json.dumps({'type': 'info', 'message': f'📝 Usando configuración desde {config_file}'}), flush=True)
+            base_opts['config_location'] = config_file
         
         # Descargar desde YouTube
         url = f'https://www.youtube.com/watch?v={video_id}'
