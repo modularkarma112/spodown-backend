@@ -49,7 +49,7 @@ def get_cookies_file():
 
 def download_audio(video_id, title, artist, output_dir):
     """
-    Descarga audio priorizando SoundCloud para mejor velocidad y calidad
+    Descarga audio priorizando SoundCloud con límite de 10MB
     """
     # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
     safe_artist = "".join(c for c in artist if c.isalnum() or c in (' ', '-', '_')).strip()
@@ -60,16 +60,16 @@ def download_audio(video_id, title, artist, output_dir):
     file_name = f"{safe_artist} - {safe_title}"
     output_path = os.path.join(output_dir, file_name)
     
-    # Configuración optimizada para velocidad y calidad
+    # Configuración optimizada para velocidad y tamaño (max 10MB)
     base_opts = {
-        'format': 'bestaudio/best',
+        'format': 'bestaudio[filesize<10M]/best[filesize<10M]/bestaudio/best',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
-            'preferredquality': '320',  # Máxima calidad
+            'preferredquality': '128',  # 128kbps = ~1MB por minuto (canciones de 4-5 min = 4-5MB)
         }],
         'outtmpl': output_path + '.%(ext)s',
-        'quiet': True,  # Menos output para más velocidad
+        'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
         'nocheckcertificate': True,
@@ -80,7 +80,7 @@ def download_audio(video_id, title, artist, output_dir):
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
-        'socket_timeout': 20,  # Timeout más corto
+        'socket_timeout': 20,
         'retries': 3,
         'fragment_retries': 3,
     }
@@ -89,7 +89,7 @@ def download_audio(video_id, title, artist, output_dir):
     sources = [
         {
             'name': 'SoundCloud',
-            'url': f'scsearch1:"{artist} {title}"',  # Tomar solo el primer resultado
+            'url': f'scsearch1:"{artist} {title}"',
             'opts': base_opts
         },
         {
@@ -114,6 +114,7 @@ def download_audio(video_id, title, artist, output_dir):
     ]
     
     last_error = None
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB en bytes
     
     for source in sources:
         try:
@@ -128,7 +129,20 @@ def download_audio(video_id, title, artist, output_dir):
                 # Encontrar el archivo MP3 generado
                 mp3_file = output_path + '.mp3'
                 
-                if os.path.exists(mp3_file) and os.path.getsize(mp3_file) > 100000:  # Verificar que sea válido (>100KB)
+                if os.path.exists(mp3_file):
+                    file_size = os.path.getsize(mp3_file)
+                    
+                    # Verificar que el archivo sea válido (>100KB) y no exceda 10MB
+                    if file_size < 100000:
+                        print(json.dumps({'type': 'warning', 'message': 'Archivo muy pequeño, intentando siguiente fuente...'}), flush=True)
+                        os.remove(mp3_file)
+                        continue
+                    
+                    if file_size > MAX_FILE_SIZE:
+                        print(json.dumps({'type': 'warning', 'message': f'Archivo muy grande ({round(file_size/1024/1024, 1)}MB), intentando siguiente fuente...'}), flush=True)
+                        os.remove(mp3_file)
+                        continue
+                    
                     # Agregar metadatos ID3
                     try:
                         audio = MP3(mp3_file, ID3=ID3)
@@ -142,7 +156,6 @@ def download_audio(video_id, title, artist, output_dir):
                     except Exception as meta_error:
                         print(json.dumps({'type': 'warning', 'message': f'Metadatos: {meta_error}'}), flush=True)
                     
-                    file_size = os.path.getsize(mp3_file)
                     size_mb = file_size / (1024 * 1024)
                     
                     print(json.dumps({
