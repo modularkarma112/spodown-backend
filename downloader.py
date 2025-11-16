@@ -49,7 +49,7 @@ def get_cookies_file():
 
 def download_audio(video_id, title, artist, output_dir):
     """
-    Descarga audio de YouTube usando yt-dlp con cookies
+    Descarga audio de YouTube usando yt-dlp con cookies y Node.js runtime
     """
     try:
         # Sanitizar nombre de archivo - formato: Artista - Titulo.mp3
@@ -63,6 +63,13 @@ def download_audio(video_id, title, artist, output_dir):
         
         # Obtener archivo de cookies
         cookies_file = get_cookies_file()
+        
+        # Buscar node en el sistema
+        node_path = 'node'  # Por defecto en PATH
+        if os.path.exists('/usr/local/bin/node'):
+            node_path = '/usr/local/bin/node'
+        elif os.path.exists('/usr/bin/node'):
+            node_path = '/usr/bin/node'
         
         # Configuración base de yt-dlp
         base_opts = {
@@ -87,13 +94,15 @@ def download_audio(video_id, title, artist, output_dir):
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-us,en;q=0.5',
             },
-            # Usar cliente Android para evitar restricciones de bot
+            # Usar solo cliente web con cookies (android/ios no soportan cookies)
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['android', 'ios', 'web'],
+                    'player_client': ['web'],
                     'player_skip': ['webpage'],
                 }
             },
+            # Habilitar Node.js runtime para JavaScript challenges
+            'js_runtimes': [f'node:{node_path}'],
             'socket_timeout': 30,
             'retries': 5,
             'fragment_retries': 5,
